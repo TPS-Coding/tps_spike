@@ -224,6 +224,41 @@ class MotorPair():
                 stop=self.stop_command, acceleration=self.acceleration, deceleration=self.deceleration)
         else:
             # Target yaw angle (counterclockwise is +, clockwise is -)
+            target_yaw = -theta * 10 # deciDegrees
+
+            # Initialize PID variables
+            integral = 0
+            last_error = 0
+            dt = 0.05  # Loop time
+
+            while True:
+                current_yaw = motion_sensor.tilt_angles()[0]
+                    
+                error = self.angle_diff(target_yaw, current_yaw)
+
+                if abs(error) < 10.0:
+                    break  # Stop if close enough
+
+                integral += error * dt
+                derivative = (error - last_error) / dt
+
+                output = self.Kp * error + self.Ki * integral + self.Kd * derivative
+                output = max(min(output, 100), -100)  # Clamp steering
+
+                steering=int(-output)
+                motor_pair.move(self.index, steering, velocity=self.speed)
+            self.stop()
+
+
+    def left_turn(self,theta, PID=False):
+        circumference = 2 * math.pi * self.wheelbase
+        distance = circumference * theta/360
+        degrees = int(distance * (360/self.wheel_circumference))
+        if not PID:
+            return motor_pair.move_tank_for_degrees(self.index, degrees, 0, self.right_speed, 
+                stop=self.stop_command, acceleration=self.acceleration, deceleration=self.deceleration)
+        else:
+             # Target yaw angle (counterclockwise is +, clockwise is -)
             target_yaw = theta * 10 # deciDegrees
 
             # Initialize PID variables
@@ -245,17 +280,9 @@ class MotorPair():
                 output = self.Kp * error + self.Ki * integral + self.Kd * derivative
                 output = max(min(output, 100), -100)  # Clamp steering
 
-                steering=int(output)
+                steering=int(-output)
                 motor_pair.move(self.index, steering, velocity=self.speed)
             self.stop()
-
-
-    def left_turn(self,theta):
-        circumference = 2 * math.pi * self.wheelbase
-        distance = circumference * theta/360
-        degrees = int(distance * (360/self.wheel_circumference))
-        return motor_pair.move_tank_for_degrees(self.index, degrees, 0, self.right_speed, 
-            stop=self.stop_command, acceleration=self.acceleration, deceleration=self.deceleration)
 
     def follow_line(self, duration, port, reverse=False):
         follow_timer = Timer(duration, autostart=True)

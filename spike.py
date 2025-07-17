@@ -249,7 +249,6 @@ class MotorPair():
                 motor_pair.move(self.index, steering, velocity=self.speed)
             self.stop()
 
-
     def left_turn(self,theta, PID=False):
         circumference = 2 * math.pi * self.wheelbase
         distance = circumference * theta/360
@@ -298,4 +297,32 @@ class MotorPair():
 
     def move(self, left_speed, right_speed):
         motor_pair.move_tank(self.index, left_speed, right_speed)
+
+    def arc_turn(self, r, theta):
+        """
+        r2 =  27 cm = r  *This is the turn radius of outer wheel
+        arc len = 2*pi*r*theta/360
+        arc len in wheel deg = 2*pi*r*theta/wheel circumference
+        v2/v1 = r2/r1
+        
+        """
+        degrees = int(abs(2 * math.pi * r * theta / self.wheel_circumference))
+        
+        if theta < 0:
+            #counterclockwise
+            # v2 -> right wheel
+            right_speed = self.right_speed
+            left_speed = int(self.right_speed * (r- self.wheelbase) / r)
+            
+        else:
+            #clockwise
+            # v2 -> left wheel
+            left_speed = self.left_speed
+            right_speed = int(self.left_speed * (r - self.wheelbase) / r)
+
+        return motor_pair.move_tank_for_degrees(self.index, degrees, left_speed, right_speed, 
+                    stop=self.stop_command, acceleration=self.acceleration, deceleration=self.deceleration )
+
+            
+            
     

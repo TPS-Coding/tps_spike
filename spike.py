@@ -3,7 +3,7 @@
     Classes for Lego Spike. API is more kid friendly than default. This is quick, 
     non professional code written only to help the kids ease into python coding 
     for lego robotics. Documentation and example code
-    can be found on the Tuxedo Park School github: www.github.com/tps-coding
+    will be added to the Tuxedo Park School github: www.github.com/tps-coding
     This library must be written to the /flash directory 
     of the hub in order to import to the lego prime spike app. """
 

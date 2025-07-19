@@ -29,10 +29,10 @@ Example
 >>> right_motor = Motor("B")
 >>> robot = MotorPair(1, ("A", "B"))
 
->>> robot.forward(time=2000)                # Move forward for 2 seconds
->>> robot.right_turn(theta=90, PID=True)    # Perform a precise 90-degree right turn using PID
->>> robot.follow_line_distance(50, port="C")  # Follow a line for 50 cm using a color sensor
->>> robot.arc_turn(r=20, theta=180)         # Execute an arc turn with 20 cm radius over 180 degrees
+>>> await robot.forward(time=2000)                # Move forward for 2 seconds
+>>> await robot.right_turn(theta=90, PID=True)    # Perform a precise 90-degree right turn using PID
+>>> await robot.follow_line_distance(50, port="C")  # Follow a line for 50 cm using a color sensor
+>>> await robot.arc_turn(r=20, theta=180)         # Execute an arc turn with 20 cm radius over 180 degrees
 >>> robot.stop()                            # Stop the robot
 """
 

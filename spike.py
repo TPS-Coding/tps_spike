@@ -352,7 +352,7 @@ class MotorPair:
                 deceleration=self.deceleration
             )
 
-    def angle_diff(self, target, current):
+    def _angle_diff(self, target, current):
         return (target - current + 1800) % 3600 - 1800
 
     async def wait_until_stopped(self, timeout=5.0):
@@ -430,7 +430,7 @@ class MotorPair:
         if time:
             timer = Timer(time, autostart=True)
             while timer.active:
-                error = self.angle_diff(target_yaw, motion_sensor.tilt_angles()[0])
+                error = self._angle_diff(target_yaw, motion_sensor.tilt_angles()[0])
                 integral += error * dt
                 derivative = (error - last_error) / dt
                 output = self.Kp * error + self.Ki * integral + self.Kd * derivative
@@ -441,7 +441,7 @@ class MotorPair:
         elif degrees:
             start = motor.absolute_position(self.port1)
             while abs(motor.relative_position(self.port1) - start) <= degrees:
-                error = self.angle_diff(target_yaw, motion_sensor.tilt_angles()[0])
+                error = self._angle_diff(target_yaw, motion_sensor.tilt_angles()[0])
                 integral += error * dt
                 derivative = (error - last_error) / dt
                 output = self.Kp * error + self.Ki * integral + self.Kd * derivative
@@ -490,7 +490,7 @@ class MotorPair:
         dt = 0.05
         while True:
             current_yaw = motion_sensor.tilt_angles()[0]
-            error = self.angle_diff(target_yaw, current_yaw)
+            error = self._angle_diff(target_yaw, current_yaw)
             if abs(error) < 10:
                 break
             integral += error * dt

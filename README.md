@@ -42,7 +42,7 @@ motor = Motor("C")
 await motor.run(degrees=180)
 ```
 
-## Why This Matters
+## Purpose
 
 These classes:
 - Make it easier to write clear, easy to understand code

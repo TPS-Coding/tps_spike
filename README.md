@@ -11,7 +11,7 @@ A simple, flexible controller for a single motor.
 - Run a motor for time, degrees, or rotations
 - Reset its position
 - Customize speed, acceleration, and stop behavior
-- Now fully `async` for use in `async def main()` functions
+
 
 ### `MotorPair`
 A high-level controller for a pair of motors (left and right wheels).
@@ -20,7 +20,6 @@ A high-level controller for a pair of motors (left and right wheels).
 - Turn left or right using tank-style or PID-controlled turns
 - Perform arc turns and follow lines with a color sensor
 - Stop smoothly or instantly with customizable braking
-- Fully compatible with `async def main()` (awaitable methods)
 - Includes helper logic for timed movement and PID yaw correction
 
 ## How to Use
@@ -30,8 +29,8 @@ In your LEGO SPIKE program, define and control your robot like this:
 ```python
 async def main():
     robot = MotorPair(1, ("A", "B"))
-    await robot.forward(time=2000)
-    await robot.right_turn(90)
+    robot.forward(time=2000)
+    robot.right_turn(90)
     robot.stop()
 ```
 

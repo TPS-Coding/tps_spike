@@ -533,6 +533,7 @@ class MotorPair:
             last_error = error
             
         self.stop()
+        self._update_odometry()
         
 
     def follow_line(self, duration, port, reverse=False):
@@ -633,9 +634,21 @@ class MotorPair:
         self.last_left_pos = motor.relative_position(self.port1)
         self.last_right_pos = motor.relative_position(self.port2)
 
-        if self.left_reversed:
-            self.last_left_pos *= -1
-        if self.right_reversed:
-            self.last_right_pos *= -1
-
         print("[SNAPSHOT] last_left: {}, last_right: {}".format(self.last_left_pos, self.last_right_pos))
+
+    
+    def go_to(self, x_target, y_target):
+        x_current, y_current, heading = self.get_position()
+
+        dx = x_target - x_current
+        dy = y_target - y_current
+
+        desired_theta = math.atan2(dy, dx)
+        dtheta = (desired_theta - heading + math.pi) % (2 * math.pi) - math.pi
+
+        print("Turning {:.1f} degrees".format(math.degrees(dtheta)))
+        self.right_turn(math.degrees(-dtheta))
+
+        distance = int(math.sqrt(dx**2 + dy**2))
+        print("moving {:.2f} forward".format(distance))
+        self.forward(distance=distance)

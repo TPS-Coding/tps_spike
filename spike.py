@@ -29,10 +29,10 @@ Example
 >>> right_motor = Motor("B")
 >>> robot = MotorPair(1, ("A", "B"))
 
->>> await robot.forward(time=2000)                # Move forward for 2 seconds
->>> await robot.right_turn(theta=90, PID=True)    # Perform a precise 90-degree right turn using PID
->>> await robot.follow_line_distance(50, port="C")  # Follow a line for 50 cm using a color sensor
->>> await robot.arc_turn(r=20, theta=180)         # Execute an arc turn with 20 cm radius over 180 degrees
+>>> robot.forward(time=2000)                # Move forward for 2 seconds
+>>> robot.right_turn(theta=90, PID=True)    # Perform a precise 90-degree right turn using PID
+>>> robot.follow_line_distance(50, port="C")  # Follow a line for 50 cm using a color sensor
+>>> robot.arc_turn(r=20, theta=180)         # Execute an arc turn with 20 cm radius over 180 degrees
 >>> robot.stop()                            # Stop the robot
 """
 
@@ -226,10 +226,11 @@ class Motor:
 
     def stop(self):
         motor.stop(self.port, stop=self.stop_command)
-        
+
+
 class MotorPair:
     """
-    Async-compatible motor pair controller for LEGO-style robots with support for
+    Motor pair controller for LEGO-style robots with support for
     forward and reverse motion, PID-controlled driving, tank turns, arc turns,
     and line following.
 
@@ -306,11 +307,7 @@ class MotorPair:
     wait_until_stopped(timeout=5.0)
         Waits until the motors stop moving, based on position change detection.
 
-    Notes
-    -----
-    - All movement methods are async and must be awaited.
-    - The robot motion functions use internal non-blocking hardware calls
-      and manage blocking using timers or encoder polling.
+    
     """
 
     DEFAULT_SPEED = 360
@@ -330,11 +327,54 @@ class MotorPair:
         self.wheel_circumference = 17.6
         self.wheelbase = 11.2
 
+        ## Odometery
+        self.x = 0.0 ## current x-pos in cm
+        self.y = 0.0 ## current y-pos in cm
+        self.heading = 0 ## current heading in rads
+        self.last_left_pos = motor.relative_position(self.port1)
+        self.last_right_pos = motor.relative_position(self.port2)
+
         self.Kp = 1.0
         self.Ki = 0.0
         self.Kd = 0.0
 
         motor_pair.pair(self.index, self.port1, self.port2)
+
+    def _update_odometry(self):
+        current_left = motor.relative_position(self.port1)
+        current_right = motor.relative_position(self.port2)
+
+        print("[ODOM] current_left: {}, last_left: {}".format(current_left, self.last_left_pos))
+        print("[ODOM] current_right: {}, last_right: {}".format(current_right, self.last_right_pos))
+
+        delta_left_degrees = current_left - self.last_left_pos
+        delta_right_degrees = current_right - self.last_right_pos
+
+        # convert degrees to distance (cm)
+        distance_left = (delta_left_degrees / 360) * self.wheel_circumference
+        distance_right = (delta_right_degrees / 360) * self.wheel_circumference
+
+        print("Δleft_deg: {}, Δright_deg: {}".format(delta_left_degrees, delta_right_degrees))
+        print("Δleft_cm: {:.2f}, Δright_cm: {:.2f}".format(distance_left, distance_right))
+
+
+        delta_distance = (distance_left + distance_right) / 2.0
+        delta_heading = (distance_right - distance_left) / self.wheelbase  # radians
+
+        self.heading += delta_heading
+        self.heading = (self.heading + math.pi) % (2 * math.pi) - math.pi
+    
+
+        self.x += delta_distance * math.cos(self.heading)
+        self.y += delta_distance * math.sin(self.heading)
+
+        print("[ODOM] Δdist: {:.2f}, Δθ: {:.2f} → (x: {:.2f}, y: {:.2f}, θ: {:.2f})".format(
+        delta_distance, delta_heading, self.x, self.y, self.heading))
+
+        # Only now update the last positions
+        self.last_left_pos = current_left
+        self.last_right_pos = current_right
+
 
     def reset_attr(self):
         self.speed = self.left_speed = self.right_speed = self.DEFAULT_SPEED
@@ -355,47 +395,20 @@ class MotorPair:
     def _angle_diff(self, target, current):
         return (target - current + 1800) % 3600 - 1800
 
-    async def wait_until_stopped(self, timeout=5.0):
-        """
-        Waits until motor movement has stopped based on position change.
-
-        Parameters
-        ----------
-        timeout : float
-            Max seconds to wait before force exiting.
-        """
-        start_time = time.time()
-        prev_pos1 = motor.relative_position(self.port1)
-        prev_pos2 = motor.relative_position(self.port2)
-
-        while True:
-            await asyncio.sleep(0.05)
-            curr_pos1 = motor.relative_position(self.port1)
-            curr_pos2 = motor.relative_position(self.port2)
-
-            delta1 = abs(curr_pos1 - prev_pos1)
-            delta2 = abs(curr_pos2 - prev_pos2)
-
-            if delta1 < 1 and delta2 < 1:
-                break
-
-            if time.time() - start_time > timeout:
-                print("Timeout waiting for motors to stop.")
-                break
-
-            prev_pos1, prev_pos2 = curr_pos1, curr_pos2
-
-    async def forward(self, steering=0, time=0, rotations=0, distance=0, PID=False):
+    def forward(self, steering=0, time=0, rotations=0, distance=0, PID=False):
+        self._record_odometry_snapshot()
         degrees = int(rotations * 360) if rotations else 0
         if distance:
             degrees = int(distance * (360 / self.wheel_circumference))
 
         if PID:
+            print("using PID based movement")
             if not any([time, rotations, distance]):
                 print("PID mode requires a time, distance, or rotation target.")
                 return
-            await self._run_pid_loop(degrees, time)
+            self._run_pid_loop(degrees, time)
         elif time:
+            print("using time based movement")
             if self.left_speed != self.right_speed:
                 self.left_speed = self.right_speed
 
@@ -408,21 +421,26 @@ class MotorPair:
 
             timer = Timer(time, autostart=True)
             while timer.active:
-                await asyncio.sleep(0.01)
                 timer.update()
-        if degrees:
+            self._update_odometry()
+        elif degrees:
+            print("using degree/distnace based movement")
             motor_pair.move_tank_for_degrees(
                 self.index, degrees, self.left_speed, self.right_speed,
                 stop=self.stop_command,
                 acceleration=self.acceleration,
                 deceleration=self.deceleration
             )
-            await self.wait_until_stopped()
+            self._wait_until_stopped()
+            self._update_odometry()
+            
         else:
+            print("using indefinite movement")
             motor_pair.move(self.index, steering, velocity=self.speed)
-            await asyncio.sleep(0.01)
+            
+            
 
-    async def _run_pid_loop(self, degrees, time):
+    def _run_pid_loop(self, degrees, time):
         target_yaw = 0
         integral = last_error = 0
         dt = 0.05
@@ -436,7 +454,6 @@ class MotorPair:
                 output = self.Kp * error + self.Ki * integral + self.Kd * derivative
                 motor_pair.move(self.index, int(-max(min(output, 100), -100)), velocity=self.speed)
                 last_error = error
-                await asyncio.sleep(dt)
                 timer.update()
         elif degrees:
             start = motor.absolute_position(self.port1)
@@ -447,32 +464,36 @@ class MotorPair:
                 output = self.Kp * error + self.Ki * integral + self.Kd * derivative
                 motor_pair.move(self.index, int(-max(min(output, 100), -100)), velocity=self.speed)
                 last_error = error
-                await asyncio.sleep(dt)
+                
         self.stop()
+        
 
-    async def reverse(self, **kwargs):
+    def reverse(self, **kwargs):
         self.left_speed *= -1
         self.right_speed *= -1
         self.speed *= -1
-        await self.forward(**kwargs)
+        self.forward(**kwargs)
         self.reset_attr()
 
     def stop(self):
         motor_pair.stop(self.index, stop=self.stop_command)
+        self._update_odometry()
 
-    async def right_turn(self, theta, PID=False):
-        await self._turn(theta, left_active=True, PID=PID)
+    def right_turn(self, theta, PID=False):
+        self._turn(theta, left_active=True, PID=PID)
 
-    async def left_turn(self, theta, PID=False):
-        await self._turn(theta, left_active=False, PID=PID)
+    def left_turn(self, theta, PID=False):
+        self._turn(theta, left_active=False, PID=PID)
 
-    async def _turn(self, theta, left_active=True, PID=False):
+    def _turn(self, theta, left_active=True, PID=False):
         circumference = 2 * math.pi * self.wheelbase
         arc_len = circumference * theta / 360
         degrees = int(arc_len * (360 / self.wheel_circumference))
         target_yaw = (-theta if left_active else theta) * 10
+        self._record_odometry_snapshot()
 
         if not PID:
+        
             left = self.left_speed if left_active else 0
             right = 0 if left_active else self.right_speed
             motor_pair.move_tank_for_degrees(
@@ -481,11 +502,13 @@ class MotorPair:
                 acceleration=self.acceleration,
                 deceleration=self.deceleration
             )
-            await self.wait_until_stopped()
+            
+            self._wait_until_stopped()
+            self._update_odometry()
         else:
-            await self._run_pid_turn(target_yaw)
+            self._run_pid_turn(target_yaw)
 
-    async def _run_pid_turn(self, target_yaw):
+    def _run_pid_turn(self, target_yaw):
         integral = last_error = 0
         dt = 0.05
         while True:
@@ -498,29 +521,32 @@ class MotorPair:
             output = self.Kp * error + self.Ki * integral + self.Kd * derivative
             motor_pair.move(self.index, int(-max(min(output, 100), -100)), velocity=self.speed)
             last_error = error
-            await asyncio.sleep(dt)
+            
         self.stop()
+        
 
-    async def follow_line(self, duration, port, reverse=False):
+    def follow_line(self, duration, port, reverse=False):
         timer = Timer(duration, autostart=True)
         while timer.active:
             reflection = color_sensor.reflection(PORT_DICT[port])
             steering = int(-3 / 5 * reflection + 30)
             if reverse:
-                await self.reverse(steering=steering)
+                self.reverse(steering=steering)
             else:
-                await self.forward(steering=steering)
+                self.forward(steering=steering)
             timer.update()
-            await asyncio.sleep(0.01)
+            
+        self._update_odometry()
 
-    async def follow_line_distance(self, distance, port, reverse=False):
+    def follow_line_distance(self, distance, port, reverse=False):
         duration = int(distance * (360 / self.wheel_circumference) * (1000 / self.speed))
-        await self.follow_line(duration, port, reverse)
+        self.follow_line(duration, port, reverse)
 
     def move(self, left_speed, right_speed):
         motor_pair.move_tank(self.index, left_speed, right_speed)
+        
 
-    async def arc_turn(self, r, theta, reverse=False):
+    def arc_turn(self, r, theta, reverse=False):
         degrees = int(abs(2 * math.pi * r * theta / self.wheel_circumference))
 
         if theta < 0:
@@ -540,4 +566,63 @@ class MotorPair:
             acceleration=self.acceleration,
             deceleration=self.deceleration
         )
-        await self.wait_until_stopped()
+        self._update_odometry()
+
+    def get_position(self):
+        """
+        Returns the current estimated position and heading of the robot
+        
+        Returns
+        -------
+        tuple of (float, float float)
+            The (x, y, heading) coordinates:
+            - x: x-position in cm
+            - y: y-position in cm
+            - heading: heading in radians
+        """
+        return self.x, self.y, self.heading
+
+    def _wait_until_stopped(self, timeout=5.0):
+        """Waits until motors stop based on encoder readings."""
+        print("Waiting for robot to stop...")
+
+        time.sleep(0.05)  # allow motors to begin moving
+
+        start_time = time.time()
+        prev_pos1 = motor.relative_position(self.port1)
+        prev_pos2 = motor.relative_position(self.port2)
+
+        stable_count = 0
+        STABLE_THRESHOLD = 3  # require 3 consecutive stable readings
+
+        while True:
+            time.sleep(0.05)
+
+            curr_pos1 = motor.relative_position(self.port1)
+            curr_pos2 = motor.relative_position(self.port2)
+
+            delta1 = abs(curr_pos1 - prev_pos1)
+            delta2 = abs(curr_pos2 - prev_pos2)
+
+            if delta1 < 1 and delta2 < 1:
+                stable_count += 1
+                if stable_count >= STABLE_THRESHOLD:
+                    print("Motors appear to have stopped.")
+                    break
+            else:
+                stable_count = 0  # reset if motion resumes
+
+            if time.time() - start_time > timeout:
+                print("Timeout waiting for motors to stop.")
+                break
+
+            prev_pos1, prev_pos2 = curr_pos1, curr_pos2
+
+    def _record_odometry_snapshot(self):
+        self.last_left_pos = motor.relative_position(self.port1)
+        self.last_right_pos = motor.relative_position(self.port2)
+
+        print("[SNAPSHOT] last_left: {}, last_right: {}".format(self.last_left_pos, self.last_right_pos))
+
+
+

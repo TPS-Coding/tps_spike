@@ -227,10 +227,9 @@ class Motor:
     def stop(self):
         motor.stop(self.port, stop=self.stop_command)
 
-
 class MotorPair:
     """
-    Motor pair controller for LEGO-style robots with support for
+    motor pair controller for LEGO-style robots with support for
     forward and reverse motion, PID-controlled driving, tank turns, arc turns,
     and line following.
 
@@ -324,7 +323,7 @@ class MotorPair:
         self.deceleration = self.DEFAULT_DECEL
         self.stop_command = motor.BRAKE
 
-        self.wheel_circumference = 17.6
+        self.wheel_circumference = 17.5
         self.wheelbase = 11.2
 
         ## Odometery
@@ -333,6 +332,10 @@ class MotorPair:
         self.heading = 0 ## current heading in rads
         self.last_left_pos = motor.relative_position(self.port1)
         self.last_right_pos = motor.relative_position(self.port2)
+
+        self.left_reversed = False
+        self.right_reversed = True  # or False, depending on your robot
+
 
         self.Kp = 1.0
         self.Ki = 0.0
@@ -343,6 +346,13 @@ class MotorPair:
     def _update_odometry(self):
         current_left = motor.relative_position(self.port1)
         current_right = motor.relative_position(self.port2)
+
+
+        if self.left_reversed:
+            current_left *= -1
+        if self.right_reversed:
+            current_right *= -1
+
 
         print("[ODOM] current_left: {}, last_left: {}".format(current_left, self.last_left_pos))
         print("[ODOM] current_right: {}, last_right: {}".format(current_right, self.last_right_pos))
@@ -477,7 +487,7 @@ class MotorPair:
 
     def stop(self):
         motor_pair.stop(self.index, stop=self.stop_command)
-        self._update_odometry()
+
 
     def right_turn(self, theta, PID=False):
         self._turn(theta, left_active=True, PID=PID)
@@ -560,6 +570,7 @@ class MotorPair:
             left_speed *= -1
             right_speed *= -1
 
+        self._record_odometry_snapshot()
         motor_pair.move_tank_for_degrees(
             self.index, degrees, left_speed, right_speed,
             stop=self.stop_command,
@@ -622,7 +633,9 @@ class MotorPair:
         self.last_left_pos = motor.relative_position(self.port1)
         self.last_right_pos = motor.relative_position(self.port2)
 
+        if self.left_reversed:
+            self.last_left_pos *= -1
+        if self.right_reversed:
+            self.last_right_pos *= -1
+
         print("[SNAPSHOT] last_left: {}, last_right: {}".format(self.last_left_pos, self.last_right_pos))
-
-
-

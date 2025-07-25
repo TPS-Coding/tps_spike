@@ -311,25 +311,37 @@ class MotorPair():
 
     def _distance_to_degrees(self, distance):
         return int(distance * 360 / self.wheel_circumference)
+    
+    def _adjust_speed(self, steering):
+        steering = max(-100, min(100, steering))  # Clamp
+        left_speed = self.speed * (1 - steering / 100)
+        right_speed = self.speed * (1 + steering / 100)
+
+        self.lt_motor.speed = int(abs(left_speed))
+        self.rt_motor.speed = int(abs(right_speed))
 
     def forward(self, distance=0, time=0, steering=0, PID=False):
+        if steering:
+            self._adjust_speed(steering)
         if distance != 0 and time == 0:
             degrees = self._distance_to_degrees(distance)
             if not PID:
                 self.lt_motor.run(degrees=degrees, reverse=True)
                 self.rt_motor.run(degrees=degrees)
             else:
-                self._run_pid_loop(degrees, time, target_yaw=0)
+                self._run_pid_loop(degrees, time, target_yaw=0, steering=steering)
         elif distance == 0 and time != 0:
+            degrees = 10000 # default large value for time loop control
             if not PID:
                 self.lt_motor.run(time=time, reverse=True)
                 self.rt_motor.run(time=time)
             else:
-                print("PID requires a distance at this time. Please set a distance")
+                self._run_pid_loop(degrees, time, target_yaw=0, steering=steering)
         else:
             self.lt_motor.run(reverse=True)
             self.rt_motor.run()
         self._await_stop()
+        self._update_speed()
   
 
     def reverse(self, distance=0, time=0, steering=0):
@@ -365,41 +377,27 @@ class MotorPair():
 
         self._await_stop()
 
-    def _run_pid_loop(self, target_degrees, time, target_yaw=0):
+    def _run_pid_loop(self, target_degrees, time, target_yaw=0, steering=0):
         """
         PID loop that adjusts motor speeds to keep the robot heading straight
         (or toward a target yaw angle) while driving forward a specified distance.
         """
-
-        KP = 2.0  
-
-        # Reset motor positions to 0
+        # Reset relative motor positions to 0
         motor.reset_relative_position(self.lt_motor.port, 0)
         motor.reset_relative_position(self.rt_motor.port, 0)
 
-        # Loop until the average of both motors has reached the target degrees
-        while True:
-            # Get current yaw from motion sensor
-            current_yaw = motion_sensor.tilt_angles()[0]  # Assuming X axis
+        # For Integral and Derivative terms
+        last_error = 0
+        integral = 0
 
-            # Calculate yaw error
-            yaw_error = target_yaw - current_yaw
+        if time != 0:
+            timer = Timer(time, autostart=True)
+        else:
+            timer = Timer(10000, autostart=True) ## large value time duration for distance PID
 
-            # Apply P-control to adjust speed
-            correction = KP * yaw_error
-
-            # Clamp correction if needed
-            max_correction = self.speed * 0.5
-            correction = max(-max_correction, min(correction, max_correction))
-
-            # Adjust motor speeds
-            left_speed = self.speed - correction
-            right_speed = self.speed + correction
-
-            motor.run(self.lt_motor.port, -int(left_speed))  # Reversed left motor
-            motor.run(self.rt_motor.port, int(right_speed))
-
-            # Calculate average position
+        # Loop until the average of both motors has reached the target degrees or time
+        while True and timer.active:
+            # distance check
             left_pos = abs(motor.relative_position(self.lt_motor.port))
             right_pos = abs(motor.relative_position(self.rt_motor.port))
             avg_pos = (left_pos + right_pos) / 2
@@ -407,10 +405,46 @@ class MotorPair():
             if avg_pos >= target_degrees:
                 break
 
+            ## calc expected yaw due to steering
+            distance_traveled_cm = avg_pos * self.wheel_circumference / 360
+
+            # catch divide by zero errors
+            if steering != 0:
+                radius = self.wheelbase / (steering / 100)
+                desired_yaw = math.degrees(distance_traveled_cm / radius)
+                desired_yaw *= 10 ## correction for yaw being in decidegrees
+            else:
+                desired_yaw = target_yaw
+
+            # Get current yaw from gyro
+            current_yaw = motion_sensor.tilt_angles()[0]  # Assuming X axis
+         
+            # Calculate yaw error
+            yaw_error = desired_yaw - current_yaw
+          
+            # PID math
+            integral += yaw_error
+            derivative = yaw_error - last_error
+            correction = self.KP * yaw_error + self.KI * integral + self.KD * derivative
+
+            # Clamp correction if needed
+            base_speed = self.speed
+            max_correction = base_speed
+            correction = max(-max_correction, min(correction, max_correction))
+
+            # Adjust motor speeds
+            left_speed = base_speed - correction
+            right_speed = base_speed + correction
+
+            motor.run(self.lt_motor.port, -int(left_speed))  # Reversed left motor
+            motor.run(self.rt_motor.port, int(right_speed))
+
+            timer.update()
+
+
         # Stop both motors
         self.lt_motor.stop()
         self.rt_motor.stop()
-
 
     
 

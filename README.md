@@ -1,7 +1,7 @@
 # LEGO Robotics Python Classes for SPIKE Prime
 
 Welcome to the custom Python classes designed for the Tuxedo Park School FIRST LEGO League (FLL) robotics team! 
-This codebase provides an easy, powerful way to control LEGO SPIKE Prime robots using Python and async programming.
+This codebase provides an easy, powerful way to control LEGO SPIKE Prime robots using Python programming.
 
 ## What's Included
 

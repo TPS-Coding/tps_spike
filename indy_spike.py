@@ -325,9 +325,9 @@ class MotorPair():
                 self.lt_motor.run(time=time, reverse=True)
                 self.rt_motor.run(time=time)
             else:
-                pass
+                print("PID requires a distance at this time. Please set a distance")
         else:
-            self.lt_motor.run()
+            self.lt_motor.run(reverse=True)
             self.rt_motor.run()
         self._await_stop()
   
@@ -365,8 +365,52 @@ class MotorPair():
 
         self._await_stop()
 
-    def _run_pid_loop(self, degrees, time, target_yaw):
-        pass
+    def _run_pid_loop(self, target_degrees, time, target_yaw=0):
+        """
+        PID loop that adjusts motor speeds to keep the robot heading straight
+        (or toward a target yaw angle) while driving forward a specified distance.
+        """
+
+        KP = 2.0  
+
+        # Reset motor positions to 0
+        motor.reset_relative_position(self.lt_motor.port, 0)
+        motor.reset_relative_position(self.rt_motor.port, 0)
+
+        # Loop until the average of both motors has reached the target degrees
+        while True:
+            # Get current yaw from motion sensor
+            current_yaw = motion_sensor.tilt_angles()[0]  # Assuming X axis
+
+            # Calculate yaw error
+            yaw_error = target_yaw - current_yaw
+
+            # Apply P-control to adjust speed
+            correction = KP * yaw_error
+
+            # Clamp correction if needed
+            max_correction = self.speed * 0.5
+            correction = max(-max_correction, min(correction, max_correction))
+
+            # Adjust motor speeds
+            left_speed = self.speed - correction
+            right_speed = self.speed + correction
+
+            motor.run(self.lt_motor.port, -int(left_speed))  # Reversed left motor
+            motor.run(self.rt_motor.port, int(right_speed))
+
+            # Calculate average position
+            left_pos = abs(motor.relative_position(self.lt_motor.port))
+            right_pos = abs(motor.relative_position(self.rt_motor.port))
+            avg_pos = (left_pos + right_pos) / 2
+
+            if avg_pos >= target_degrees:
+                break
+
+        # Stop both motors
+        self.lt_motor.stop()
+        self.rt_motor.stop()
+
 
     
 
